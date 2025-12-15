@@ -94,7 +94,10 @@ class GuardQuote:
         logger.info(f"Navigating to: {self.quotation_url}")
         
         try:
-            await self.page.goto(self.quotation_url, wait_until="networkidle", timeout=60000)
+            # Use domcontentloaded instead of networkidle - quote page has continuous background activity
+            await self.page.goto(self.quotation_url, wait_until="domcontentloaded", timeout=60000)
+            # Wait a bit for JavaScript to initialize
+            await asyncio.sleep(3)
             
             # Take screenshot
             screenshot_path = self.login_handler.screenshot_dir / "01_quote_page.png"
