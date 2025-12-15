@@ -1,6 +1,7 @@
 """
 Webhook server for Guard Insurance automation
 Receives data from Next.js app and triggers Guard automation
+Version: 2.0.0 - Added trace system, cleanup scheduler
 """
 import asyncio
 import json
@@ -8,13 +9,14 @@ import logging
 import threading
 import queue
 import time
+import shutil
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from guard_login import GuardLogin
 from config import (
-    WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_PATH, LOG_DIR, TRACE_DIR,
+    WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_PATH, LOG_DIR, TRACE_DIR, SESSION_DIR,
     MAX_WORKERS
 )
 
@@ -51,6 +53,107 @@ queue_position = {}
 # Browser lock - only ONE browser at a time
 browser_lock = threading.Lock()
 browser_in_use = False
+
+# Cleanup scheduler configuration
+CLEANUP_INTERVAL_HOURS = 6  # Run cleanup every 6 hours
+CLEANUP_MAX_AGE_DAYS = 2  # Delete files older than 2 days
+MAX_TRACE_FILES = 5  # Keep only last 5 trace files
+
+# Cleanup scheduler thread
+cleanup_thread = None
+cleanup_stop_event = threading.Event()
+
+
+def cleanup_old_files():
+    """
+    Cleanup old files to prevent disk space issues:
+    - Delete browser_data folders older than CLEANUP_MAX_AGE_DAYS
+    - Keep only MAX_TRACE_FILES most recent trace files
+    - Delete old log files older than CLEANUP_MAX_AGE_DAYS
+    - Delete all screenshot folders
+    """
+    logger.info("[CLEANUP] Starting scheduled cleanup...")
+    now = time.time()
+    max_age_seconds = CLEANUP_MAX_AGE_DAYS * 24 * 60 * 60
+    deleted_count = 0
+    
+    try:
+        # 1. Cleanup old browser_data folders (except browser_data_default)
+        logger.info("[CLEANUP] Cleaning up old browser_data folders...")
+        for folder in SESSION_DIR.glob("browser_data_*"):
+            if folder.name == "browser_data_default":
+                continue  # Keep the default browser data folder
+            try:
+                folder_age = now - folder.stat().st_mtime
+                if folder_age > max_age_seconds:
+                    shutil.rmtree(folder)
+                    deleted_count += 1
+                    logger.info(f"[CLEANUP] Deleted old browser_data: {folder.name}")
+            except Exception as e:
+                logger.debug(f"[CLEANUP] Could not delete {folder}: {e}")
+        
+        # 2. Keep only last MAX_TRACE_FILES trace files
+        logger.info("[CLEANUP] Cleaning up old trace files...")
+        trace_files = sorted(TRACE_DIR.glob("*.zip"), key=lambda f: f.stat().st_mtime, reverse=True)
+        if len(trace_files) > MAX_TRACE_FILES:
+            for trace_file in trace_files[MAX_TRACE_FILES:]:
+                try:
+                    trace_file.unlink()
+                    deleted_count += 1
+                    logger.info(f"[CLEANUP] Deleted old trace: {trace_file.name}")
+                except Exception as e:
+                    logger.debug(f"[CLEANUP] Could not delete trace {trace_file}: {e}")
+        
+        # 3. Cleanup old log files
+        logger.info("[CLEANUP] Cleaning up old log files...")
+        for log_file in LOG_DIR.glob("*.log"):
+            if log_file.name == "webhook_server.log":
+                continue  # Don't delete current log
+            try:
+                file_age = now - log_file.stat().st_mtime
+                if file_age > max_age_seconds:
+                    log_file.unlink()
+                    deleted_count += 1
+                    logger.info(f"[CLEANUP] Deleted old log: {log_file.name}")
+            except Exception as e:
+                logger.debug(f"[CLEANUP] Could not delete log {log_file}: {e}")
+        
+        # 4. Delete old screenshot folders
+        logger.info("[CLEANUP] Cleaning up screenshot folders...")
+        screenshots_dir = LOG_DIR / "screenshots"
+        if screenshots_dir.exists():
+            for folder in screenshots_dir.iterdir():
+                if folder.is_dir():
+                    try:
+                        folder_age = now - folder.stat().st_mtime
+                        if folder_age > max_age_seconds:
+                            shutil.rmtree(folder)
+                            deleted_count += 1
+                            logger.info(f"[CLEANUP] Deleted screenshot folder: {folder.name}")
+                    except Exception as e:
+                        logger.debug(f"[CLEANUP] Could not delete screenshot folder {folder}: {e}")
+        
+        logger.info(f"[CLEANUP] Cleanup completed. Deleted {deleted_count} items.")
+        
+    except Exception as e:
+        logger.error(f"[CLEANUP] Error during cleanup: {e}")
+
+
+def cleanup_scheduler():
+    """Background thread that runs cleanup periodically"""
+    logger.info(f"[CLEANUP] Scheduler started - will run every {CLEANUP_INTERVAL_HOURS} hours")
+    
+    while not cleanup_stop_event.is_set():
+        # Wait for interval (check stop event every minute)
+        for _ in range(CLEANUP_INTERVAL_HOURS * 60):
+            if cleanup_stop_event.is_set():
+                break
+            time.sleep(60)  # Sleep 1 minute at a time
+        
+        if not cleanup_stop_event.is_set():
+            cleanup_old_files()
+    
+    logger.info("[CLEANUP] Scheduler stopped")
 
 
 @app.route('/health', methods=['GET'])
@@ -211,6 +314,127 @@ def queue_status():
         "max_workers": MAX_WORKERS,
         "browser_in_use": browser_in_use
     }), 200
+
+
+@app.route('/trace/<task_id>', methods=['GET'])
+def get_trace(task_id: str):
+    """Download trace file for a specific task"""
+    try:
+        # Try multiple trace file patterns
+        trace_candidates = [
+            TRACE_DIR / f"{task_id}.zip",  # Exact task_id
+            TRACE_DIR / f"default.zip",  # Default trace
+            *list(TRACE_DIR.glob(f"*{task_id}*.zip")),  # Any file containing task_id
+        ]
+        
+        # Find the first existing trace file
+        trace_path = None
+        for candidate in trace_candidates:
+            if candidate.exists() and candidate.is_file():
+                trace_path = candidate
+                break
+        
+        if not trace_path:
+            logger.warning(f"Trace not found for task: {task_id}")
+            logger.info(f"Searched paths: {[str(p) for p in trace_candidates[:3]]}")
+            return jsonify({
+                "status": "not_found",
+                "message": f"Trace not found for task {task_id}"
+            }), 404
+        
+        logger.info(f"Serving trace for task {task_id}: {trace_path}")
+        return send_file(
+            str(trace_path),
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f"{trace_path.name}"
+        )
+    except Exception as e:
+        logger.error(f"Error serving trace for task {task_id}: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route('/traces', methods=['GET'])
+def list_traces():
+    """List all available trace files - returns HTML UI or JSON"""
+    try:
+        traces = []
+        for trace_file in sorted(TRACE_DIR.glob("*.zip"), key=lambda f: f.stat().st_mtime, reverse=True):
+            try:
+                stat = trace_file.stat()
+                traces.append({
+                    "task_id": trace_file.stem,
+                    "filename": trace_file.name,
+                    "size_bytes": stat.st_size,
+                    "size_kb": round(stat.st_size / 1024, 2),
+                    "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "url": f"/trace/{trace_file.stem}"
+                })
+            except Exception as e:
+                logger.debug(f"Error getting info for {trace_file}: {e}")
+        
+        # Return HTML if browser request, JSON otherwise
+        if 'text/html' in request.headers.get('Accept', ''):
+            html = '''<!DOCTYPE html>
+<html><head><title>Guard Automation - Traces</title>
+<style>
+body{font-family:'Segoe UI',Arial,sans-serif;max-width:900px;margin:40px auto;padding:0 20px;background:#f5f5f5}
+h1{color:#2c3e50;border-bottom:3px solid #3498db;padding-bottom:10px}
+.info{background:#e8f4f8;padding:15px;border-radius:8px;margin-bottom:20px}
+table{width:100%;border-collapse:collapse;background:white;box-shadow:0 2px 5px rgba(0,0,0,0.1);border-radius:8px;overflow:hidden}
+th{background:#3498db;color:white;padding:12px;text-align:left}
+td{padding:12px;text-align:left;border-bottom:1px solid #eee}
+tr:hover{background:#f8f9fa}
+a{color:#3498db;text-decoration:none;font-weight:bold}
+a:hover{text-decoration:underline}
+.size{color:#7f8c8d}
+.date{color:#95a5a6;font-size:0.9em}
+.download-btn{background:#27ae60;color:white;padding:6px 12px;border-radius:4px;font-size:0.85em}
+.download-btn:hover{background:#219a52;text-decoration:none}
+.empty{text-align:center;padding:40px;color:#7f8c8d}
+</style></head>
+<body>
+<h1>🛡️ Guard Automation - Traces</h1>
+<div class="info">
+<strong>Total:</strong> ''' + str(len(traces)) + ''' traces | <strong>Max stored:</strong> ''' + str(MAX_TRACE_FILES) + '''<br>
+<small>Traces are automatically cleaned up. Only the most recent ''' + str(MAX_TRACE_FILES) + ''' are kept.</small>
+</div>'''
+            
+            if traces:
+                html += '''<table>
+<tr><th>Task ID</th><th>Size</th><th>Created</th><th>Action</th></tr>'''
+                for t in traces:
+                    html += f'''<tr>
+<td><code>{t["task_id"]}</code></td>
+<td class="size">{t["size_kb"]} KB</td>
+<td class="date">{t["created_at"][:19].replace('T', ' ')}</td>
+<td><a href="{t["url"]}" class="download-btn">⬇ Download</a></td>
+</tr>'''
+                html += '</table>'
+            else:
+                html += '<div class="empty">📭 No traces available yet.<br>Run an automation task to generate traces.</div>'
+            
+            html += '''
+<div style="margin-top:30px;text-align:center;color:#95a5a6;font-size:0.85em">
+Guard Insurance Automation Server | <a href="/health">Health Check</a> | <a href="/tasks">Tasks</a>
+</div>
+</body></html>'''
+            return html, 200, {'Content-Type': 'text/html'}
+        
+        return jsonify({
+            "total": len(traces),
+            "max_traces": MAX_TRACE_FILES,
+            "traces": traces
+        }), 200
+    except Exception as e:
+        logger.error(f"Error listing traces: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
 def run_automation_task_sync(task_id: str, policy_code: str, quote_data: dict, create_account: bool = False, account_data: dict = None):
@@ -507,16 +731,32 @@ def worker_thread():
 
 
 def init_workers():
-    """Initialize worker threads"""
+    """Initialize worker threads and cleanup scheduler"""
+    global cleanup_thread
+    
     logger.info("=" * 80)
-    logger.info("INITIALIZING GUARD AUTOMATION WORKERS")
+    logger.info("GUARD AUTOMATION WEBHOOK SERVER v2.0.0")
     logger.info("=" * 80)
+    logger.info(f"Queue System: {MAX_WORKERS} worker threads (with browser locking)")
+    logger.info(f"Browser Lock: Only 1 browser instance at a time")
+    logger.info(f"Cleanup: Every {CLEANUP_INTERVAL_HOURS}h, delete files older than {CLEANUP_MAX_AGE_DAYS} days")
+    logger.info(f"Traces: Keep only last {MAX_TRACE_FILES} trace files")
+    logger.info("Starting worker threads...")
     
     # Start worker threads
     for i in range(MAX_WORKERS):
         worker = threading.Thread(target=worker_thread, daemon=True, name=f"Guard-Worker-{i+1}")
         worker.start()
         logger.info(f"  Worker {i+1}/{MAX_WORKERS} started")
+    
+    # Start cleanup scheduler thread
+    cleanup_thread = threading.Thread(target=cleanup_scheduler, daemon=True, name="Cleanup-Scheduler")
+    cleanup_thread.start()
+    logger.info("  Cleanup scheduler started")
+    
+    # Run initial cleanup on startup
+    logger.info("  Running initial cleanup...")
+    cleanup_old_files()
     
     logger.info("=" * 80)
     logger.info("Guard Automation Server ready to accept requests...")
@@ -531,6 +771,7 @@ if __name__ == '__main__':
     logger.info(f"Webhook endpoint: http://{WEBHOOK_HOST}:{WEBHOOK_PORT}{WEBHOOK_PATH}")
     logger.info(f"Health check: http://{WEBHOOK_HOST}:{WEBHOOK_PORT}/health")
     logger.info(f"Queue status: http://{WEBHOOK_HOST}:{WEBHOOK_PORT}/queue/status")
+    logger.info(f"Traces: http://{WEBHOOK_HOST}:{WEBHOOK_PORT}/traces")
     logger.info(f"Logs directory: {LOG_DIR}")
     
     app.run(host=WEBHOOK_HOST, port=WEBHOOK_PORT, debug=False)
