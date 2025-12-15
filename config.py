@@ -27,7 +27,8 @@ GUARD_PASSWORD = os.getenv('GUARD_PASSWORD', '')
 
 # Webhook server settings
 WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', '0.0.0.0')
-WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', 5001))  # Different port from Encova
+# Railway provides PORT env var, fall back to WEBHOOK_PORT or 8080
+WEBHOOK_PORT = int(os.getenv('PORT', os.getenv('WEBHOOK_PORT', 8080)))
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 
 # Browser settings

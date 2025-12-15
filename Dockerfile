@@ -58,17 +58,18 @@ RUN mkdir -p logs sessions traces debug
 ENV PYTHONUNBUFFERED=1
 ENV BROWSER_HEADLESS=true
 ENV WEBHOOK_HOST=0.0.0.0
-ENV WEBHOOK_PORT=5001
+ENV WEBHOOK_PORT=8080
+ENV PORT=8080
 
 # Expose webhook port
-EXPOSE 5001
+EXPOSE 8080
 # Expose remote debugging port (9222) if needed for debugging
 EXPOSE 9222
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5001/health', timeout=5)" || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)" || exit 1
 
 # Run webhook server with gunicorn for production
-CMD gunicorn --bind 0.0.0.0:5001 --workers 1 --threads 4 --timeout 300 --access-logfile - --error-logfile - --preload webhook_server:app
+CMD gunicorn --bind 0.0.0.0:8080 --workers 1 --threads 4 --timeout 300 --access-logfile - --error-logfile - --preload webhook_server:app
 

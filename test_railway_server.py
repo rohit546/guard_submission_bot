@@ -14,7 +14,7 @@ if sys.platform == 'win32':
     except:
         pass
 
-# Railway deployed server URL - UPDATE THIS WITH YOUR RAILWAY URL
+# Railway deployed server URL
 RAILWAY_URL = "https://guardsubmissionbot-production.up.railway.app"
 
 # Endpoints
