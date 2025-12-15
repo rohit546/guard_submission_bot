@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class GuardQuote:
     def __init__(self, policy_code: str, task_id: str = "quote", 
+                 trace_id: str = None,
                  combined_sales: str = "1000000", 
                  gas_gallons: str = "100000",
                  year_built: str = "2025",
@@ -27,6 +28,7 @@ class GuardQuote:
         Args:
             policy_code: The MGACODE for the quote (e.g., TEBP690442)
             task_id: Unique identifier for this task
+            trace_id: Custom trace file identifier (e.g., quote_company_name)
             combined_sales: Inside Sales / Annual Sales / Convenience Store Receipts
             gas_gallons: Annual Gallons of Gasoline
             year_built: Year building was built
@@ -36,7 +38,8 @@ class GuardQuote:
         self.policy_code = policy_code
         self.quotation_url = f"https://gigezrate.guard.com/dotnet/mvc/uw/EZRate/EZR_AddNewProspectShell/Home/Index?MGACODE={policy_code}"
         self.task_id = task_id
-        self.login_handler = GuardLogin(task_id=task_id)
+        self.trace_id = trace_id or f"quote_{policy_code}"
+        self.login_handler = GuardLogin(task_id=task_id, trace_id=self.trace_id)
         self.page = None
         
         # Webhook data

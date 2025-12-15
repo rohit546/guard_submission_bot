@@ -456,10 +456,21 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
     logger.info(f"[TASK {task_id}] Quote Data: {json.dumps(quote_data, indent=2)}")
     
     login_handler = None
+    trace_id = None
+    
+    # Create trace_id from company name if account_data is provided
+    if account_data and account_data.get('applicant_name'):
+        company_name = account_data.get('applicant_name', '')
+        # Sanitize company name for filename (remove special chars, limit length)
+        safe_company = "".join(c if c.isalnum() else "_" for c in company_name)[:30].lower()
+        trace_id = safe_company
+        logger.info(f"[TASK {task_id}] Trace ID: {trace_id}")
+    elif policy_code:
+        trace_id = policy_code.lower()
     
     try:
         logger.info(f"[TASK {task_id}] Initializing Guard login...")
-        login_handler = GuardLogin(task_id="default")
+        login_handler = GuardLogin(task_id="default", trace_id=trace_id)
         
         # If create_account is true, create new account first
         if create_account:
@@ -499,6 +510,18 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                     "ownership_type": "tenant"
                 }
                 logger.info(f"[TASK {task_id}] Using default account data")
+            
+            # Update trace_id with company name if not already set
+            if not trace_id and account_data.get('applicant_name'):
+                company_name = account_data.get('applicant_name', '')
+                safe_company = "".join(c if c.isalnum() else "_" for c in company_name)[:30].lower()
+                trace_id = safe_company
+                # Update login_handler with new trace_id
+                login_handler.trace_id = trace_id
+                if login_handler.enable_tracing:
+                    from config import TRACE_DIR
+                    login_handler.trace_path = TRACE_DIR / f"{trace_id}.zip"
+                logger.info(f"[TASK {task_id}] Updated Trace ID: {trace_id}")
             
             await login_handler.init_browser()
             login_result = await login_handler.login()
@@ -553,9 +576,12 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
             }
             
             # Initialize quote handler with same task_id for session sharing
+            # Use quote_{trace_id} for quote trace file
+            quote_trace_id = f"quote_{trace_id}" if trace_id else f"quote_{policy_code.lower()}"
             quote_handler = GuardQuote(
                 policy_code=policy_code,
                 task_id="default",  # Share session
+                trace_id=quote_trace_id,
                 **quote_params
             )
             
