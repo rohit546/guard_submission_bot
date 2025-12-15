@@ -32,7 +32,15 @@ WEBHOOK_PORT = int(os.getenv('PORT', os.getenv('WEBHOOK_PORT', 5001)))
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 
 # Browser settings
-BROWSER_HEADLESS = os.getenv('BROWSER_HEADLESS', 'false').lower() == 'true'
+# Auto-detect headless mode: if no DISPLAY (server environment), force headless
+_headless_env = os.getenv('BROWSER_HEADLESS', 'auto').lower()
+if _headless_env == 'auto':
+    # Auto-detect: headless if no DISPLAY or running on Railway/Docker
+    BROWSER_HEADLESS = not os.getenv('DISPLAY') or os.getenv('RAILWAY_ENVIRONMENT') or os.path.exists('/.dockerenv')
+elif _headless_env in ('true', '1', 'yes'):
+    BROWSER_HEADLESS = True
+else:
+    BROWSER_HEADLESS = False
 BROWSER_TIMEOUT = int(os.getenv('BROWSER_TIMEOUT', 60000))  # 60 seconds
 
 # Guard portal URL
