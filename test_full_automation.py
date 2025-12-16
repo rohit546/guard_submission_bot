@@ -62,7 +62,7 @@ def get_full_automation_data():
         "create_account": True,
         
         # ====================================================================
-        # ACCOUNT CREATION DATA - SIMPLIFIED! (Only 13 fields from user)
+        # ACCOUNT CREATION DATA - SIMPLIFIED! (Only 14 fields from user)
         # ====================================================================
         "account_data": {
             # Business Entity Information
@@ -119,6 +119,9 @@ def get_full_automation_data():
             "year_built": "2005",             # Year Building Was Built
             "square_footage": "4500",         # Total Square Footage
             "mpds": "8"                       # Number of Gas Pumps (Multi-Product Dispensers)
+            
+            # Optional:
+            # "employees": "5"                # Default is "3" if not sent
         }
     }
 
@@ -217,7 +220,6 @@ def send_full_automation(data: dict):
     print(f"   Phone: ({phone.get('area', '')}) {phone.get('prefix', '')}-{phone.get('suffix', '')}")
     print(f"   Email: {account.get('email', 'N/A')}")
     print(f"   Years in Business: {account.get('years_in_business', 'N/A')}")
-    print(f"   Policy Inception: {account.get('policy_inception', 'N/A')}")
     print(f"   Ownership: {account.get('ownership_type', 'N/A')}")
     
     print(f"\n💰 QUOTE DATA:")
@@ -226,6 +228,8 @@ def send_full_automation(data: dict):
     print(f"   Year Built: {quote.get('year_built', 'N/A')}")
     print(f"   Square Footage: {int(quote.get('square_footage', 0)):,} sq ft")
     print(f"   Gas Pumps (MPDs): {quote.get('mpds', 'N/A')}")
+    if quote.get('employees'):
+        print(f"   Employees: {quote.get('employees')}")
     
     print(f"\n🚀 Sending request...")
     
@@ -371,7 +375,8 @@ def main():
     
     # Check server health
     if not check_server_health():
-        print("\n❌ Server not available. Exiting.")
+        print("\n❌ Server not available.")
+        print("   Start local server: python webhook_server.py")
         sys.exit(1)
     
     # Show menu
