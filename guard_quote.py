@@ -51,8 +51,8 @@ class GuardQuote:
         
         # Hardcoded values (same for every automation)
         self.damage_to_premises = "100000"
-        self.employees = "10"
-        self.stories = "1"  # Always 1 story
+        self.employees = "3"  # Hardcoded to 3
+        self.stories = "1"  # Hardcoded to 1 story
         self.residential_units = "0"
         self.vacancy_percent = "0"
         self.gas_sales_percent = "40"
@@ -1080,9 +1080,9 @@ class GuardQuote:
                     if stories_input:
                         await stories_input.click()
                         await stories_input.fill("")
-                        await stories_input.type("10")
+                        await stories_input.type(self.stories)
                         await asyncio.sleep(0.5)
-                        logger.info("✅ Number of Stories: 10")
+                        logger.info(f"✅ Number of Stories: {self.stories}")
                     else:
                         logger.warning("⚠️ Could not find Stories input")
                     
