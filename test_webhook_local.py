@@ -62,7 +62,7 @@ def test_local_webhook():
         payload = {
             "action": "start_automation",
             "task_id": task_id,
-            "policy_code": "TEBP602893",
+            "policy_code": "BIBP608141",
             "create_account": False,
             "quote_data": {
                 "combined_sales": "800000",
