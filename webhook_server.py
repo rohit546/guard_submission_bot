@@ -503,7 +503,7 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
             
             # Apply HARDCODED values (user doesn't need to send these)
             account_data["website"] = ""  # Hardcoded
-            account_data["description"] = "Gas station with convenience store"  # Hardcoded
+            # NOTE: description is sent by user (mandatory field)
             account_data["producer_id"] = "2774846"  # Hardcoded
             account_data["csr_id"] = "16977940"  # Hardcoded
             account_data["policy_inception"] = policy_inception_date  # Auto-calculated

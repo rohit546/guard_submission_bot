@@ -44,7 +44,7 @@ def get_full_automation_data():
     
     SIMPLIFIED PAYLOAD - Only user-provided fields!
     The following are HARDCODED on the server:
-    - website, description, producer_id, csr_id, policy_inception
+    - website, producer_id, csr_id, policy_inception (auto +2 days)
     - headquarters_state (copied from state), industry_id, sub_industry_id
     - business_type_id, lines_of_business
     """
@@ -88,6 +88,7 @@ def get_full_automation_data():
             
             # Business Details
             "years_in_business": "5",
+            "description": "Gas station with convenience store, selling fuel, snacks, beverages, and tobacco products",
             
             # Property Ownership
             "ownership_type": "tenant"  # "tenant" or "owner"
@@ -96,7 +97,6 @@ def get_full_automation_data():
             # THESE ARE NOW HARDCODED ON SERVER - NO NEED TO SEND:
             # ============================================================
             # "website": ""                  -> Hardcoded to ""
-            # "description": "..."           -> Hardcoded to "Gas station with convenience store"
             # "producer_id": "2774846"       -> Hardcoded
             # "csr_id": "16977940"           -> Hardcoded
             # "policy_inception": "..."      -> Auto-calculated (today + 2 days)
@@ -149,6 +149,7 @@ def get_sample_data_2():
             },
             "email": "mikequickstopfuel@gmail.com",
             "years_in_business": "8",
+            "description": "High-volume gas station with full-service convenience store",
             "ownership_type": "owner"
             # All other fields are hardcoded on server!
         },
