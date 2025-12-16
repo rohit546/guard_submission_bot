@@ -21,7 +21,8 @@ class GuardQuote:
                  gas_gallons: str = "100000",
                  year_built: str = "2025",
                  square_footage: str = "2000",
-                 mpds: str = "6"):
+                 mpds: str = "6",
+                 employees: str = "3"):
         """
         Initialize Guard Quote automation
         
@@ -34,6 +35,7 @@ class GuardQuote:
             year_built: Year building was built
             square_footage: Total building square footage (used for both total and occupied)
             mpds: Number of Gas Pumps (MPDs)
+            employees: Number of employees (default: 3)
         """
         self.policy_code = policy_code
         self.quotation_url = f"https://gigezrate.guard.com/dotnet/mvc/uw/EZRate/EZR_AddNewProspectShell/Home/Index?MGACODE={policy_code}"
@@ -48,10 +50,10 @@ class GuardQuote:
         self.year_built = year_built
         self.square_footage = square_footage
         self.mpds = mpds
+        self.employees = employees  # User input or default "3"
         
         # Hardcoded values (same for every automation)
         self.damage_to_premises = "100000"
-        self.employees = "3"  # Hardcoded to 3
         self.stories = "1"  # Hardcoded to 1 story
         self.residential_units = "0"
         self.vacancy_percent = "0"

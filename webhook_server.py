@@ -576,7 +576,8 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                 "gas_gallons": quote_data.get("gas_gallons", "100000") if quote_data else "100000",
                 "year_built": quote_data.get("year_built", "2025") if quote_data else "2025",
                 "square_footage": quote_data.get("square_footage", "2000") if quote_data else "2000",
-                "mpds": quote_data.get("mpds", "6") if quote_data else "6"
+                "mpds": quote_data.get("mpds", "6") if quote_data else "6",
+                "employees": quote_data.get("employees", "3") if quote_data else "3"  # Default to 3 if not provided
             }
             
             # Initialize quote handler with same task_id for session sharing
