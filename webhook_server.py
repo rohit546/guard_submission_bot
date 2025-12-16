@@ -476,40 +476,44 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
         if create_account:
             logger.info(f"[TASK {task_id}] Creating new account...")
             
-            # Use default account data if not provided
+            # ==================================================================
+            # APPLY HARDCODED DEFAULTS FOR ACCOUNT DATA
+            # ==================================================================
+            from datetime import timedelta
+            policy_inception_date = (datetime.now() + timedelta(days=2)).strftime("%m/%d/%Y")
+            
+            # Default account data (used if nothing provided)
             if not account_data:
-                from datetime import timedelta
-                policy_inception_date = (datetime.now() + timedelta(days=2)).strftime("%m/%d/%Y")
                 account_data = {
-                    "legal_entity": "L",  # LLC
+                    "legal_entity": "L",
                     "applicant_name": "TEST COMPANY LLC",
-                    "dba": "Test Business",
+                    "dba": "",
                     "address1": "280 Griffin St",
                     "address2": "",
                     "zipcode": "30253-3100",
                     "city": "McDonough",
                     "state": "GA",
                     "contact_name": "John Doe",
-                    "contact_phone": {
-                        "area": "404",
-                        "prefix": "555",
-                        "suffix": "9999"
-                    },
-                    "email": "harveyspectra@gmail.com",
-                    "website": "www.testbusiness.com",
+                    "contact_phone": {"area": "404", "prefix": "555", "suffix": "9999"},
+                    "email": "test@example.com",
                     "years_in_business": "5",
-                    "producer_id": "2774846",
-                    "csr_id": "16977940",
-                    "description": "Retail grocery store operations",
-                    "policy_inception": policy_inception_date,
-                    "headquarters_state": "GA",
-                    "industry_id": "11",
-                    "sub_industry_id": "45",
-                    "business_type_id": "127",
-                    "lines_of_business": ["CB"],
                     "ownership_type": "tenant"
                 }
                 logger.info(f"[TASK {task_id}] Using default account data")
+            
+            # Apply HARDCODED values (user doesn't need to send these)
+            account_data["website"] = ""  # Hardcoded
+            account_data["description"] = "Gas station with convenience store"  # Hardcoded
+            account_data["producer_id"] = "2774846"  # Hardcoded
+            account_data["csr_id"] = "16977940"  # Hardcoded
+            account_data["policy_inception"] = policy_inception_date  # Auto-calculated
+            account_data["headquarters_state"] = account_data.get("state", "GA")  # Copy from state
+            account_data["industry_id"] = "11"  # Hardcoded (Gas Station)
+            account_data["sub_industry_id"] = "45"  # Hardcoded
+            account_data["business_type_id"] = "127"  # Hardcoded
+            account_data["lines_of_business"] = ["CB"]  # Hardcoded (Commercial Business)
+            
+            logger.info(f"[TASK {task_id}] Applied hardcoded defaults to account data")
             
             # Update trace_id with company name if not already set
             if not trace_id and account_data.get('applicant_name'):

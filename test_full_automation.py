@@ -41,10 +41,13 @@ def get_full_automation_data():
     """
     Returns complete data for full automation (account creation + quote)
     This is exactly what the Online Quoting Coversheet will send.
-    """
     
-    # Calculate policy inception date (2 days from now)
-    policy_inception_date = (datetime.now() + timedelta(days=2)).strftime("%m/%d/%Y")
+    SIMPLIFIED PAYLOAD - Only user-provided fields!
+    The following are HARDCODED on the server:
+    - website, description, producer_id, csr_id, policy_inception
+    - headquarters_state (copied from state), industry_id, sub_industry_id
+    - business_type_id, lines_of_business
+    """
     
     return {
         # ====================================================================
@@ -59,7 +62,7 @@ def get_full_automation_data():
         "create_account": True,
         
         # ====================================================================
-        # ACCOUNT CREATION DATA
+        # ACCOUNT CREATION DATA - SIMPLIFIED! (Only 13 fields from user)
         # ====================================================================
         "account_data": {
             # Business Entity Information
@@ -81,31 +84,27 @@ def get_full_automation_data():
                 "prefix": "555",
                 "suffix": "1234"
             },
-            "email": "ahmed.khan@bismillahgas.com",
-            "website": "www.bismillahgas.com",
+            "email": "rohitjagwani587@gmail.com",
             
             # Business Details
             "years_in_business": "5",
-            "description": "Gas station with convenience store, selling fuel, snacks, beverages, and tobacco products",
-            
-            # Producer/Agent Information
-            "producer_id": "2774846",
-            "csr_id": "16977940",
-            
-            # Policy Information
-            "policy_inception": policy_inception_date,
-            "headquarters_state": "GA",
-            
-            # Industry Classification
-            "industry_id": "11",        # Retail Trade
-            "sub_industry_id": "45",    # Gas Stations
-            "business_type_id": "127",  # Gas Station with Convenience Store
-            
-            # Lines of Business
-            "lines_of_business": ["CB"],  # Commercial Business
             
             # Property Ownership
             "ownership_type": "tenant"  # "tenant" or "owner"
+            
+            # ============================================================
+            # THESE ARE NOW HARDCODED ON SERVER - NO NEED TO SEND:
+            # ============================================================
+            # "website": ""                  -> Hardcoded to ""
+            # "description": "..."           -> Hardcoded to "Gas station with convenience store"
+            # "producer_id": "2774846"       -> Hardcoded
+            # "csr_id": "16977940"           -> Hardcoded
+            # "policy_inception": "..."      -> Auto-calculated (today + 2 days)
+            # "headquarters_state": "GA"     -> Copied from state
+            # "industry_id": "11"            -> Hardcoded (Gas Station)
+            # "sub_industry_id": "45"        -> Hardcoded
+            # "business_type_id": "127"      -> Hardcoded
+            # "lines_of_business": ["CB"]    -> Hardcoded (Commercial Business)
         },
         
         # ====================================================================
@@ -119,39 +118,28 @@ def get_full_automation_data():
             # Building Information
             "year_built": "2005",             # Year Building Was Built
             "square_footage": "4500",         # Total Square Footage
-            "mpds": "8",                      # Number of Gas Pumps (Multi-Product Dispensers)
-            
-            # Additional fields that are hardcoded in the automation:
-            # - damage_to_premises: "100000"
-            # - employees: "10"
-            # - stories: "1"
-            # - residential_units: "0"
-            # - vacancy_percent: "0"
-            # - gas_sales_percent: "40"
-            # - cbd_percent: "0"
-            # - tobacco_percent: "10"
-            # - alcohol_percent: "10"
+            "mpds": "8"                       # Number of Gas Pumps (Multi-Product Dispensers)
         }
     }
 
 
 def get_sample_data_2():
-    """Alternative sample data for testing"""
-    policy_inception_date = (datetime.now() + timedelta(days=3)).strftime("%m/%d/%Y")
+    """Alternative sample data for testing - SIMPLIFIED PAYLOAD"""
     
     return {
         "action": "start_automation",
         "task_id": f"full_auto_{int(time.time())}",
         "create_account": True,
         
+        # SIMPLIFIED - Only required fields from user
         "account_data": {
             "legal_entity": "C",  # Corporation
             "applicant_name": "QUICK STOP FUEL INC",
             "dba": "Quick Stop Gas & Go",
-            "address1": "1500 Highway 20",
+            "address1": "280 Griffin St",
             "address2": "",
-            "zipcode": "30052",
-            "city": "Loganville",
+            "zipcode": "30253-3100",
+            "city": "McDonough",
             "state": "GA",
             "contact_name": "Michael Johnson",
             "contact_phone": {
@@ -159,19 +147,10 @@ def get_sample_data_2():
                 "prefix": "466",
                 "suffix": "5678"
             },
-            "email": "mike@quickstopfuel.com",
-            "website": "www.quickstopfuel.com",
+            "email": "mikequickstopfuel@gmail.com",
             "years_in_business": "8",
-            "description": "High-volume gas station with full-service convenience store",
-            "producer_id": "2774846",
-            "csr_id": "16977940",
-            "policy_inception": policy_inception_date,
-            "headquarters_state": "GA",
-            "industry_id": "11",
-            "sub_industry_id": "45",
-            "business_type_id": "127",
-            "lines_of_business": ["CB"],
             "ownership_type": "owner"
+            # All other fields are hardcoded on server!
         },
         
         "quote_data": {
