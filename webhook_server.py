@@ -14,10 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+import requests
 from guard_login import GuardLogin
 from config import (
     WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_PATH, LOG_DIR, TRACE_DIR, SESSION_DIR,
-    MAX_WORKERS
+    MAX_WORKERS, COVERSHEET_WEBHOOK_URL
 )
 
 # Setup logging
@@ -62,6 +63,106 @@ MAX_TRACE_FILES = 5  # Keep only last 5 trace files
 # Cleanup scheduler thread
 cleanup_thread = None
 cleanup_stop_event = threading.Event()
+
+
+def extract_submission_id(task_id: str) -> str:
+    """
+    Extract submission_id from task_id
+    Format: guard_{submission_id}_{timestamp} or guard_{timestamp}
+    Returns submission_id if found, otherwise returns task_id
+    """
+    if not task_id:
+        return None
+    
+    # Try to extract submission_id from format: guard_{submission_id}_{timestamp}
+    parts = task_id.split('_')
+    if len(parts) >= 3:
+        # Format: guard_{submission_id}_{timestamp}
+        # Check if middle part looks like a UUID (has dashes) or is a valid submission ID
+        submission_id = parts[1]
+        # If it's a UUID format (has dashes), return it
+        if '-' in submission_id and len(submission_id) > 10:
+            return submission_id
+        # Otherwise, might be a different format, try to return it anyway
+        if len(submission_id) > 5:  # Reasonable length for submission ID
+            return submission_id
+    
+    # If format doesn't match, return task_id as fallback
+    return task_id
+
+
+def notify_coversheet_completion(task_id: str, submission_id: str = None, success: bool = True, 
+                                 result_data: dict = None, error: str = None, error_details: str = None):
+    """
+    Notify Coversheet when automation completes (success or failure)
+    
+    Args:
+        task_id: The task ID that was sent in the original request
+        submission_id: Extract from task_id if not provided
+        success: True if completed successfully, False if failed
+        result_data: Dict with policy_code, quote_url, message (if success)
+        error: Error message string (if failed)
+        error_details: Full error details/stack trace (if failed)
+    """
+    try:
+        # Extract submission_id from task_id if not provided
+        if not submission_id:
+            submission_id = extract_submission_id(task_id)
+        
+        # Prepare payload
+        payload = {
+            "carrier": "guard",
+            "task_id": task_id,
+            "submission_id": submission_id or task_id,
+            "status": "completed" if success else "failed",
+            "completed_at": datetime.utcnow().isoformat() + "Z"
+        }
+        
+        if success and result_data:
+            payload["result"] = {
+                "policy_code": result_data.get("policy_code"),
+                "quote_url": result_data.get("quote_url"),
+                "message": result_data.get("message", "Automation completed successfully")
+            }
+        else:
+            payload["error"] = error or "Automation failed"
+            if error_details:
+                payload["error_details"] = error_details
+        
+        # Skip webhook if URL is not configured
+        if not COVERSHEET_WEBHOOK_URL or COVERSHEET_WEBHOOK_URL == '':
+            logger.info(f"[WEBHOOK] Skipping Coversheet notification - URL not configured")
+            return
+        
+        # Send webhook callback
+        logger.info(f"[WEBHOOK] Notifying Coversheet: {payload['status']} for task {task_id}")
+        logger.info(f"[WEBHOOK] URL: {COVERSHEET_WEBHOOK_URL}")
+        logger.info(f"[WEBHOOK] Payload: {json.dumps(payload, indent=2)}")
+        
+        response = requests.post(
+            COVERSHEET_WEBHOOK_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        response.raise_for_status()
+        logger.info(f"[WEBHOOK] ✅ Successfully notified Coversheet: {payload['status']}")
+        logger.info(f"[WEBHOOK] Response: {response.status_code} - {response.text[:200]}")
+        
+    except requests.exceptions.HTTPError as e:
+        # More detailed error logging for HTTP errors
+        error_msg = f"HTTP {e.response.status_code}: {e.response.reason}"
+        if e.response.status_code == 404:
+            error_msg += f" - Endpoint not found. Please verify the URL: {COVERSHEET_WEBHOOK_URL}"
+            error_msg += f"\n[WEBHOOK] Response body: {e.response.text[:500]}"
+        logger.warning(f"[WEBHOOK] ⚠️ Failed to notify Coversheet: {error_msg}")
+        # Don't fail the automation if webhook fails - just log it
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"[WEBHOOK] ⚠️ Failed to notify Coversheet: {e}")
+        # Don't fail the automation if webhook fails - just log it
+    except Exception as e:
+        logger.warning(f"[WEBHOOK] ⚠️ Error notifying Coversheet: {e}", exc_info=True)
+        # Don't fail the automation if webhook fails - just log it
 
 
 def cleanup_old_files():
@@ -226,9 +327,16 @@ def webhook_receiver():
         
         if action == 'start_automation':
             # Generate task_id
-            task_id = payload.get('task_id') or f"guard_{policy_code or 'new'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            # If submission_id is provided, use format: guard_{submission_id}_{timestamp}
+            submission_id = payload.get('submission_id')
+            if submission_id:
+                task_id = payload.get('task_id') or f"guard_{submission_id}_{int(datetime.now().timestamp())}"
+            else:
+                task_id = payload.get('task_id') or f"guard_{policy_code or 'new'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
             logger.info(f"[GUARD] Starting automation task: {task_id}")
+            if submission_id:
+                logger.info(f"[GUARD] Submission ID: {submission_id}")
             logger.info(f"[GUARD] Create Account: {create_account}")
             logger.info(f"[GUARD] Policy Code: {policy_code or 'Will be created'}")
             logger.info(f"[GUARD] Quote Data: {quote_data}")
@@ -242,6 +350,7 @@ def webhook_receiver():
             active_sessions[task_id] = {
                 "status": "queued" if current_workers >= MAX_WORKERS else "running",
                 "task_id": task_id,
+                "submission_id": submission_id,  # Store submission_id for webhook callback
                 "policy_code": policy_code,
                 "create_account": create_account,
                 "queued_at": datetime.now().isoformat(),
@@ -538,6 +647,17 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                     "error": "Login failed",
                     "failed_at": datetime.now().isoformat()
                 }
+                # Notify Coversheet of failure
+                submission_id = None
+                if task_id in active_sessions:
+                    submission_id = active_sessions[task_id].get('submission_id')
+                notify_coversheet_completion(
+                    task_id=task_id,
+                    submission_id=submission_id,
+                    success=False,
+                    error="Login failed",
+                    error_details=None
+                )
                 return
             
             # Create account
@@ -552,6 +672,17 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                     "error": "Account creation failed",
                     "failed_at": datetime.now().isoformat()
                 }
+                # Notify Coversheet of failure
+                submission_id = None
+                if task_id in active_sessions:
+                    submission_id = active_sessions[task_id].get('submission_id')
+                notify_coversheet_completion(
+                    task_id=task_id,
+                    submission_id=submission_id,
+                    success=False,
+                    error="Account creation failed",
+                    error_details=None
+                )
                 return
             
             # Extract policy code and URL
@@ -629,14 +760,46 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                     "quotation_url": quotation_url
                 }
                 
+                # Notify Coversheet of successful completion (account + quote)
+                submission_id = None
+                if task_id in active_sessions:
+                    submission_id = active_sessions[task_id].get('submission_id')
+                
+                notify_coversheet_completion(
+                    task_id=task_id,
+                    submission_id=submission_id,
+                    success=True,
+                    result_data={
+                        "policy_code": policy_code,
+                        "quote_url": quotation_url,
+                        "message": f"Account created and quote completed successfully for policy {policy_code}"
+                    }
+                )
+                
             except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                error_message = f"Quote automation error: {str(e)}"
                 logger.error(f"[TASK {task_id}] ❌ Quote automation error: {e}", exc_info=True)
                 active_sessions[task_id] = {
                     "status": "failed",
                     "task_id": task_id,
-                    "error": f"Quote automation error: {str(e)}",
+                    "error": error_message,
                     "failed_at": datetime.now().isoformat()
                 }
+                
+                # Notify Coversheet of failure
+                submission_id = None
+                if task_id in active_sessions:
+                    submission_id = active_sessions[task_id].get('submission_id')
+                
+                notify_coversheet_completion(
+                    task_id=task_id,
+                    submission_id=submission_id,
+                    success=False,
+                    error=error_message,
+                    error_details=error_details
+                )
             finally:
                 try:
                     await quote_handler.close()
@@ -663,6 +826,23 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                 "message": automation_result.get("message"),
                 "result": automation_result
             }
+            
+            # Notify Coversheet of successful completion
+            # Get submission_id from active_sessions if stored, otherwise extract from task_id
+            submission_id = None
+            if task_id in active_sessions:
+                submission_id = active_sessions[task_id].get('submission_id')
+            
+            notify_coversheet_completion(
+                task_id=task_id,
+                submission_id=submission_id,
+                success=True,
+                result_data={
+                    "policy_code": policy_code,
+                    "quote_url": automation_result.get("quote_url"),
+                    "message": automation_result.get("message", "Guard automation completed successfully")
+                }
+            )
         else:
             logger.error(f"[TASK {task_id}] ❌ Failed: {automation_result.get('message')}")
             active_sessions[task_id] = {
@@ -672,21 +852,48 @@ async def run_automation_task(task_id: str, policy_code: str, quote_data: dict, 
                 "error": automation_result.get("message"),
                 "failed_at": datetime.now().isoformat()
             }
+            
+            # Notify Coversheet of failure
+            submission_id = None
+            if task_id in active_sessions:
+                submission_id = active_sessions[task_id].get('submission_id')
+            
+            notify_coversheet_completion(
+                task_id=task_id,
+                submission_id=submission_id,
+                success=False,
+                error=automation_result.get("message", "Automation failed"),
+                error_details=None
+            )
     
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
+        error_message = str(e)
         logger.error(f"[TASK {task_id}] ❌ Error: {e}")
         logger.error(f"[TASK {task_id}] Full traceback:\n{error_details}")
         active_sessions[task_id] = {
             "status": "error",
             "task_id": task_id,
             "policy_code": policy_code,
-            "error": str(e),
+            "error": error_message,
             "error_type": type(e).__name__,
             "traceback": error_details,
             "failed_at": datetime.now().isoformat()
         }
+        
+        # Notify Coversheet of error
+        submission_id = None
+        if task_id in active_sessions:
+            submission_id = active_sessions[task_id].get('submission_id')
+        
+        notify_coversheet_completion(
+            task_id=task_id,
+            submission_id=submission_id,
+            success=False,
+            error=error_message,
+            error_details=error_details
+        )
     finally:
         if login_handler:
             try:

@@ -64,6 +64,12 @@ CLEANUP_LOGS_DAYS = int(os.getenv('CLEANUP_LOGS_DAYS', 7))
 CLEANUP_TRACES_DAYS = int(os.getenv('CLEANUP_TRACES_DAYS', 30))
 CLEANUP_SESSIONS_DAYS = int(os.getenv('CLEANUP_SESSIONS_DAYS', 7))
 
+# Coversheet webhook callback URL
+COVERSHEET_WEBHOOK_URL = os.getenv(
+    'COVERSHEET_WEBHOOK_URL',
+    'https://carrier-submission-tracker-system-for-insurance-production.up.railway.app/api/webhooks/rpa-complete'
+).strip()
+
 print(f"Guard Automation Config Loaded:")
 print(f"  - Base Directory: {BASE_DIR}")
 print(f"  - Logs: {LOG_DIR}")
