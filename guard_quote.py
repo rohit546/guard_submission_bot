@@ -1168,7 +1168,21 @@ class GuardQuote:
             await self.page.screenshot(path=str(screenshot_path), full_page=True)
             logger.info(f"Screenshot saved: {screenshot_path}")
             
-            # Field 1: Building coverage needed? (Tenant = No, Owner = Yes)
+            # Field 1: Intended building use (Commercial)
+            logger.info("Selecting Intended Building Use: Commercial...")
+            building_use_selectors = [
+                'select[name="conveniencestore_intended_building_use"]',
+                'select[id="conveniencestore_intended_building_use"]'
+            ]
+            
+            for selector in building_use_selectors:
+                if await self.page.query_selector(selector):
+                    await self.page.select_option(selector, value="C")
+                    logger.info("✅ Selected Intended Building Use: C (Commercial)")
+                    await asyncio.sleep(0.5)
+                    break
+            
+            # Field 2: Building coverage needed? (Tenant = No, Owner = Yes)
             logger.info("Selecting 'No' for Building coverage needed (Tenant)...")
             building_coverage_selectors = [
                 'input[name="conveniencestore_bld_cvg_radio"][value="N"]',
