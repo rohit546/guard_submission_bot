@@ -1063,8 +1063,8 @@ class GuardQuote:
                     logger.info("✅ Selected Burglar Alarm: Central Station")
                     break
             
-            # Field 21: Security Cameras (No)
-            logger.info("Selecting Security Cameras: No...")
+            # Field 21: Security Cameras (Yes)
+            logger.info("Selecting Security Cameras: Yes...")
             cameras_selectors = [
                 'select[name="SecurityCameras"]',
                 'select[id="SecurityCameras"]'
@@ -1072,8 +1072,8 @@ class GuardQuote:
             
             for selector in cameras_selectors:
                 if await self.page.query_selector(selector):
-                    await self.page.select_option(selector, value="N")
-                    logger.info("✅ Selected Security Cameras: N (No)")
+                    await self.page.select_option(selector, value="Y")
+                    logger.info("✅ Selected Security Cameras: Y (Yes)")
                     break
             
             await asyncio.sleep(1)
