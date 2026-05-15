@@ -62,24 +62,24 @@ def get_full_automation_data():
         "account_data": {
             # Business Entity Information
             "legal_entity": "L",  # L=LLC, C=Corporation, P=Partnership, I=Individual, J=Joint Venture
-            "applicant_name": "BISMILLAH GAS STATION LLC",
-            "dba": "Bismillah Gas & Convenience",
+            "applicant_name": "Tara Property Investments LLC",
+            "dba": "moomo Gas & Convenience",
             
             # Business Address
-            "address1": "280 Griffin St",
-            "address2": "Suite 100",
-            "zipcode": "30253-3100",
-            "city": "McDonough",
+            "address1": "9298 Tara Blvd",
+            "address2": " ",
+            "zipcode": "30236-4901",
+            "city": "Jonesboro",
             "state": "GA",
             
             # Contact Information
-            "contact_name": "Ahmed Khan",
+            "contact_name": "Tara johnson",
             "contact_phone": {
                 "area": "404",
-                "prefix": "555",
-                "suffix": "1234"
+                "prefix": "212",
+                "suffix": "8254"
             },
-            "email": "rohitjagwani587@gmail.com",
+            "email": "rohitjagwani543@gmail.com",
             
             # Business Details
             "years_in_business": "5",
@@ -111,7 +111,7 @@ def get_full_automation_data():
             "gas_gallons": "750000",          # Annual Gallons of Gasoline (750,000)
             
             # Building Information
-            "year_built": "2005",             # Year Building Was Built
+            "year_built": "2016",             # Year Building Was Built
             "square_footage": "4500",         # Total Square Footage
             "mpds": "8"                       # Number of Gas Pumps (Multi-Product Dispensers)
             

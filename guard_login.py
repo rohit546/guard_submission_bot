@@ -31,6 +31,86 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _get_email_body(msg) -> str:
+    """Prefer plain text; fall back to HTML."""
+    plain, html = None, None
+    if msg.is_multipart():
+        for part in msg.walk():
+            ct = part.get_content_type()
+            try:
+                payload = part.get_payload(decode=True)
+                if not payload:
+                    continue
+                decoded = payload.decode(errors="replace")
+            except Exception:
+                continue
+            if ct == "text/plain" and plain is None:
+                plain = decoded
+            elif ct == "text/html" and html is None:
+                html = decoded
+    else:
+        try:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                decoded = payload.decode(errors="replace")
+                if msg.get_content_type() == "text/html":
+                    html = decoded
+                else:
+                    plain = decoded
+        except Exception:
+            pass
+    return plain or html or ""
+
+
+def _html_to_text(html: str) -> str:
+    """Strip HTML so CSS colors like #000000 are not mistaken for codes."""
+    text = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;|&#\d+;", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_valid_guard_code(code: str) -> bool:
+    if not code or len(code) != 6 or not code.isdigit():
+        return False
+    # Reject CSS black and other obvious non-codes
+    if code in ("000000", "111111", "123456", "999999"):
+        return False
+    return True
+
+
+def extract_guard_verification_code(body: str) -> str | None:
+    """
+    Extract 6-digit Guard MFA code from email body (plain or HTML).
+    Guard format: "Your Agency Service Center verification code is 551473"
+    """
+    if not body:
+        return None
+
+    text = body
+    if "<" in body and ">" in body:
+        text = _html_to_text(body)
+
+    patterns = [
+        r"verification\s+code\s+is\s+(\d{6})",
+        r"verification\s+code[:\s]+(\d{6})",
+        r"Your\s+Agency\s+Service\s+Center\s+verification\s+code\s+is\s+(\d{6})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match and _is_valid_guard_code(match.group(1)):
+            return match.group(1)
+
+    # Fallback: 6 digits not part of a hex color (#000000)
+    for match in re.finditer(r"(?<![#a-fA-F0-9])(\d{6})(?!\d)", text):
+        code = match.group(1)
+        if _is_valid_guard_code(code):
+            return code
+
+    return None
+
+
 def fetch_guard_verification_code(max_retries=5, retry_delay=10):
     """
     Fetch Guard verification code from Gmail via IMAP
@@ -92,7 +172,7 @@ def fetch_guard_verification_code(max_retries=5, retry_delay=10):
                 continue
             
             recent_emails = email_ids[-5:] if len(email_ids) >= 5 else email_ids
-            logger.info(f"Checking last {len(recent_emails)} recent emails (from last 2 minutes)...")
+            logger.info(f"Checking last {len(recent_emails)} recent emails (max age 5 minutes)...")
             
             # Check each email (newest first)
             for email_id in reversed(recent_emails):
@@ -126,7 +206,7 @@ def fetch_guard_verification_code(max_retries=5, retry_delay=10):
                                     email_date = parsedate_to_datetime(email_date_str)
                                     email_age_seconds = (datetime.now(email_date.tzinfo) - email_date).total_seconds()
                                     
-                                    if email_age_seconds > 90:
+                                    if email_age_seconds > 300:
                                         logger.debug(f"Email too old ({email_age_seconds:.0f}s), skipping")
                                         continue
                                     
@@ -137,27 +217,10 @@ def fetch_guard_verification_code(max_retries=5, retry_delay=10):
                             else:
                                 logger.info(f"Found Guard email: {subject}")
                             
-                            # Get email body
-                            body = ""
-                            if msg.is_multipart():
-                                for part in msg.walk():
-                                    if part.get_content_type() == "text/plain":
-                                        body = part.get_payload(decode=True).decode()
-                                        break
-                                    elif part.get_content_type() == "text/html":
-                                        body = part.get_payload(decode=True).decode()
-                            else:
-                                body = msg.get_payload(decode=True).decode()
+                            body = _get_email_body(msg)
+                            verification_code = extract_guard_verification_code(body)
                             
-                            # Extract verification code
-                            # Guard format: "Your Agency Service Center verification code is 551473"
-                            code_match = re.search(r'verification code is (\d{6})', body, re.IGNORECASE)
-                            if not code_match:
-                                # Fallback: any 6-digit number
-                                code_match = re.search(r'\b(\d{6})\b', body)
-                            
-                            if code_match:
-                                verification_code = code_match.group(1)
+                            if verification_code:
                                 logger.info(f"✅ Verification code found: {verification_code}")
                                 mail.close()
                                 mail.logout()

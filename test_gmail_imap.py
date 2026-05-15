@@ -5,8 +5,9 @@ This will help verify your app password works and can read Guard verification em
 import imaplib
 import email
 from email.header import decode_header
-import re
 from datetime import datetime
+
+from guard_login import _get_email_body, extract_guard_verification_code
 
 # Your Gmail credentials
 GMAIL_USER = "zara@mckinneyandco.com"  # Replace with your full email
@@ -86,25 +87,8 @@ try:
                 # Get date
                 date = msg.get("Date")
                 
-                # Get email body
-                body = ""
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == "text/plain":
-                            body = part.get_payload(decode=True).decode()
-                            break
-                        elif part.get_content_type() == "text/html":
-                            body = part.get_payload(decode=True).decode()
-                else:
-                    body = msg.get_payload(decode=True).decode()
-                
-                # Try to extract 6-digit verification code
-                # Guard format: "Your Agency Service Center verification code is 551473"
-                code_match = re.search(r'verification code is (\d{6})', body, re.IGNORECASE)
-                if not code_match:
-                    # Fallback: any 6-digit number
-                    code_match = re.search(r'\b(\d{6})\b', body)
-                verification_code = code_match.group(1) if code_match else None
+                body = _get_email_body(msg)
+                verification_code = extract_guard_verification_code(body)
                 
                 print(f"\n📧 EMAIL #{i}")
                 print("-" * 80)
