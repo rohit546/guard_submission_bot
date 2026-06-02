@@ -582,7 +582,15 @@ class GuardLogin:
         try:
             # Navigate to quote form
             logger.info("Navigating to account setup form...")
-            await self.page.goto(QUOTE_FORM_URL, wait_until="networkidle", timeout=60000)
+            try:
+                await self.page.goto(QUOTE_FORM_URL, wait_until="domcontentloaded", timeout=60000)
+            except Exception as nav_err:
+                logger.warning(f"Navigation timeout (page may still have loaded): {nav_err}")
+            
+            # Wait for the form to actually appear regardless of navigation state
+            await self.page.wait_for_selector("#BizType, #Name, #Address1", timeout=30000, state="visible")
+            logger.info("Account setup form is visible")
+            await asyncio.sleep(2)
             
             screenshot_path = self.screenshot_dir / "01_account_form.png"
             await self.page.screenshot(path=str(screenshot_path), full_page=True)
@@ -702,6 +710,21 @@ class GuardLogin:
             await self.page.select_option("#BusinessTypeID", business_type_id)
             await asyncio.sleep(5)
             
+            # Pre-submission questions (all No)
+            logger.info("Answering pre-submission questions...")
+            
+            await self.page.click("#customer_presubmission_financialdistress_radio_N")
+            logger.info("✓ Foreclosure/bankruptcy/litigation = No")
+            await asyncio.sleep(0.5)
+            
+            await self.page.click("#customer_presubmission_financialcrime_radio_N")
+            logger.info("✓ Fraud/bribery/arson conviction = No")
+            await asyncio.sleep(0.5)
+            
+            await self.page.click("#customer_presubmission_behavioralliability_radio_N")
+            logger.info("✓ Sexual abuse/discrimination claims = No")
+            await asyncio.sleep(0.5)
+            
             # Lines of Business
             if account_data.get("lines_of_business"):
                 for lob in account_data["lines_of_business"]:
@@ -740,28 +763,30 @@ class GuardLogin:
             logger.info("Clicking Save button...")
             await self.page.click("#save_btn")
             
-            # Wait for redirect to execStoredProc
-            await self.page.wait_for_url("**/execStoredProc/**", timeout=30000)
-            logger.info("✅ Redirected to execStoredProc page")
+            # Wait for redirect after save (could be execStoredProc or ASC_Prerate with ProspectId)
+            try:
+                await self.page.wait_for_url("**/execStoredProc/**", timeout=15000)
+                logger.info("Redirected to execStoredProc page")
+            except:
+                logger.info(f"Save redirected to: {self.page.url}")
             
             screenshot_path = self.screenshot_dir / "03_after_save.png"
             await self.page.screenshot(path=str(screenshot_path), full_page=True)
             
-            # Click Continue
+            # Click Start Application / Continue button
             await asyncio.sleep(2)
-            selectors = ["a:has-text('continue')", "a:has-text('Continue')"]
-            
-            for selector in selectors:
-                try:
-                    if await self.page.locator(selector).count() > 0:
-                        await asyncio.gather(
-                            self.page.wait_for_url("**/EZR_AddNewProspectShell/**", timeout=30000),
-                            self.page.click(selector)
-                        )
-                        logger.info(f"✅ Clicked Continue")
-                        break
-                except:
-                    continue
+            start_btn = await self.page.wait_for_selector(
+                "button#continue, button:has-text('START APPLICATION'), a:has-text('continue'), a:has-text('Continue')",
+                timeout=15000,
+                state="visible"
+            )
+            if start_btn:
+                logger.info("Found Start Application / Continue button, clicking...")
+                await asyncio.gather(
+                    self.page.wait_for_url("**/EZR_AddNewProspectShell/**", timeout=30000),
+                    start_btn.click()
+                )
+                logger.info("Clicked Start Application - navigating to quote page")
             
             # Extract policy code and URL
             quotation_url = self.page.url
